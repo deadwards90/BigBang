@@ -1,0 +1,76 @@
+{
+  "id": "ADatabase",
+  "containers": [
+    {
+      "id": "AContainer",
+      "indexingPolicy": {
+        "indexingMode": "consistent",
+        "automatic": true,
+        "includedPaths": [
+          {
+            "path": "/*",
+            "indexes": [
+              {
+                "kind": "Range",
+                "dataType": "Number",
+                "precision": -1
+              },
+              {
+                "kind": "Hash",
+                "dataType": "String",
+                "precision": 3
+              }
+            ]
+          },
+          {
+            "path": "/Status/DeliveryEvents/[]/Event/?",
+            "indexes": [
+              {
+                "kind": "Hash",
+                "dataType": "String",
+                "precision": 3
+              },
+              {
+                "kind": "Range",
+                "dataType": "Number",
+                "precision": -1
+              }
+            ]
+          },
+          {
+            "path": "/Status/EngagementEvents/[]/EventType/?",
+            "indexes": [
+              {
+                "kind": "Hash",
+                "dataType": "String",
+                "precision": 3
+              },
+              {
+                "kind": "Range",
+                "dataType": "Number",
+                "precision": -1
+              }
+            ]
+          }
+        ],
+        "excludedPaths": [
+          {
+            "path": "/To/?"
+          },
+          {
+            "path": "/From/?"
+          }
+        ]
+      },
+      "partitionKey": "/partitionKey",
+      "throughput":  "",
+      "defaultTimeToLive": 1000,
+      "storedProcedures":  [
+        "sp_mytest2.js"
+      ],
+      "userDefinedFunctions":  [
+        "udf_mytest.js"
+      ] 
+    }
+  ]
+}
