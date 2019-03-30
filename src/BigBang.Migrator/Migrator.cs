@@ -141,7 +141,7 @@ namespace BigBang.Migrator
                     _logger.LogInformation($"Creating stored procedure {file}");
 
                     var id = Path.GetFileNameWithoutExtension(Path.Combine(directoryFullPath, file));
-                    await cloudContainer.StoredProcedures.CreateStoredProceducreAsync(id,
+                    await cloudContainer.StoredProcedures.CreateStoredProcedureAsync(id,
                         await File.ReadAllTextAsync(Path.Combine(directoryFullPath, file)));
                 }
 
@@ -198,7 +198,7 @@ namespace BigBang.Migrator
                     {
                         _logger.LogInformation($"Creating stored procedure {file}");
 
-                        await containerToUpdate.StoredProcedures.CreateStoredProceducreAsync(id,
+                        await containerToUpdate.StoredProcedures.CreateStoredProcedureAsync(id,
                             await File.ReadAllTextAsync(Path.Combine(directoryFullPath, file)));
                     }
                 }
