@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Text;
 using System.Threading.Tasks;
 using BigBang.Migrator.Models;
 using Microsoft.Azure.Cosmos;
@@ -62,7 +61,7 @@ namespace BigBang.Migrator
 
             _logger.LogInformation("Checking current containers");
 
-            var (containersToCreate, containersToUpdate, containersToDelete) = ContainersToCreate(requestedDatabase, cloudContainers);
+            var (containersToCreate, containersToUpdate, containersToDelete) = SplitContainers(requestedDatabase, cloudContainers);
 
             _logger.LogInformation($"Creating {containersToCreate.Count} containers");
 
@@ -80,7 +79,7 @@ namespace BigBang.Migrator
         }
 
         private static (IList<Container> containersToCreate, IList<Container> containersToUpdate, IList<Container>
-            containersToDelete) ContainersToCreate(
+            containersToDelete) SplitContainers(
                 MigratableDatabase requestedDatabase, IList<CosmosContainerSettings> cloudContainers)
         {
             var containersToCreate = requestedDatabase.Containers
@@ -145,6 +144,7 @@ namespace BigBang.Migrator
                     await cloudContainer.StoredProcedures.CreateStoredProceducreAsync(id,
                         await File.ReadAllTextAsync(Path.Combine(directoryFullPath, file)));
                 }
+
 
                 // TODO: Implement UDFs when available
                 //foreach (var file in container.UserDefinedFunctions)
