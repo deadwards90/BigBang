@@ -28,7 +28,7 @@ namespace BigBang.Migrator
             try
             {
                 _logger.LogInformation("Getting account settings to check connection");
-                await _client.GetAccountSettingsAsync();
+                await _client.ReadAccountAsync();
                 _logger.LogInformation("Account settings retrieved");
             }
             catch (Exception e)
@@ -56,8 +56,8 @@ namespace BigBang.Migrator
             _logger.LogInformation("Starting migrations, checking database");
 
             var cloudDatabase = await CreateOrGetDatabase(_client, requestedDatabase);
-
-            var cloudContainers = (await cloudDatabase.Containers.GetContainerIterator().FetchNextSetAsync()).ToList();
+            
+            var cloudContainers = (await cloudDatabase.GetContainerQueryIterator<ContainerProperties>().GetAll()).ToList();
 
             _logger.LogInformation("Checking current containers");
 
@@ -78,9 +78,10 @@ namespace BigBang.Migrator
             _logger.LogInformation("Finished");
         }
 
-        private static (IList<Container> containersToCreate, IList<Container> containersToUpdate, IList<Container>
-            containersToDelete) SplitContainers(
-                MigratableDatabase requestedDatabase, IList<CosmosContainerSettings> cloudContainers)
+        private static (IList<BigBangContainer> containersToCreate, 
+            IList<BigBangContainer> containersToUpdate, 
+            IList<ContainerProperties> containersToDelete) SplitContainers (
+                MigratableDatabase requestedDatabase, IList<ContainerProperties> cloudContainers)
         {
             var containersToCreate = requestedDatabase.Containers
                 .Where(c => cloudContainers.All(cc => cc.Id != c.Id))
@@ -90,23 +91,24 @@ namespace BigBang.Migrator
                 .Where(c => cloudContainers.Any(cc => cc.Id == c.Id))
                 .ToList();
 
-            var containersToDelete = requestedDatabase.Containers
-                .Except(containersToUpdate)
-                .Except(containersToCreate)
+            var containersToDelete = cloudContainers
+                .Where(c => !containersToCreate.Any(cc => cc.Id == c.Id))
+                .Where(c => !containersToUpdate.Any(cc => cc.Id == c.Id))
                 .ToList();
+
             return (containersToCreate, containersToUpdate, containersToDelete);
         }
 
-        private async Task<CosmosDatabase> CreateOrGetDatabase(CosmosClient client, MigratableDatabase requestedDatabase)
+        private async Task<Database> CreateOrGetDatabase(CosmosClient client, MigratableDatabase requestedDatabase)
         {
             var response =
-                await client.Databases.CreateDatabaseIfNotExistsAsync(requestedDatabase.Id, requestedDatabase.Throughput);
+                await client.CreateDatabaseIfNotExistsAsync(requestedDatabase.Id, requestedDatabase.Throughput);
             var cloudDatabase = response.Database;
 
             if (response.StatusCode == HttpStatusCode.Conflict && requestedDatabase.Throughput.HasValue)
             {
                 _logger.LogInformation("Database already exists, replacing throughput");
-                await cloudDatabase.ReplaceProvisionedThroughputAsync(requestedDatabase.Throughput.Value);
+                await cloudDatabase.ReplaceThroughputAsync(requestedDatabase.Throughput.Value);
             }
             else
             {
@@ -116,14 +118,14 @@ namespace BigBang.Migrator
             return cloudDatabase;
         }
 
-        private async Task CreateContainers(IEnumerable<Container> containersToCreate, CosmosDatabase cloudDatabase,
+        private async Task CreateContainers(IEnumerable<BigBangContainer> containersToCreate, Database cloudDatabase,
             string directoryFullPath)
         {
             foreach (var container in containersToCreate)
             {
-                var cosmosContainerSettings = new CosmosContainerSettings(container.Id, container.PartitionKey)
+                var cosmosContainerSettings = new ContainerProperties(container.Id, container.PartitionKey)
                 {
-                    DefaultTimeToLive = TimeSpan.FromSeconds(container.DefaultTimeToLive),
+                    DefaultTimeToLive = Convert.ToInt32(TimeSpan.FromSeconds(container.DefaultTimeToLive).TotalSeconds),
                     UniqueKeyPolicy = container.UniqueKeyPolicy ?? new UniqueKeyPolicy()
                 };
 
@@ -132,7 +134,7 @@ namespace BigBang.Migrator
 
                 _logger.LogInformation($"Creating container {container.Id}");
 
-                var containerResponse = await cloudDatabase.Containers.CreateContainerAsync(cosmosContainerSettings);
+                var containerResponse = await cloudDatabase.CreateContainerAsync(cosmosContainerSettings);
 
                 var cloudContainer = containerResponse.Container;
 
@@ -141,8 +143,8 @@ namespace BigBang.Migrator
                     _logger.LogInformation($"Creating stored procedure {file}");
 
                     var id = Path.GetFileNameWithoutExtension(Path.Combine(directoryFullPath, file));
-                    await cloudContainer.StoredProcedures.CreateStoredProcedureAsync(id,
-                        await File.ReadAllTextAsync(Path.Combine(directoryFullPath, file)));
+                    //await cloudContainer.Scripts.CreateStoredProcedureAsync(id,
+                    //    await File.ReadAllTextAsync(Path.Combine(directoryFullPath, file)));
                 }
 
 
@@ -154,19 +156,19 @@ namespace BigBang.Migrator
             }
         }
 
-        private async Task UpdateContainers(IEnumerable<Container> containersToUpdate, CosmosDatabase cloudDatabase,
+        private async Task UpdateContainers(IEnumerable<BigBangContainer> containersToUpdate, Database cloudDatabase,
             string directoryFullPath)
         {
             foreach (var container in containersToUpdate)
             {
-                var containerToUpdate = cloudDatabase.Containers[container.Id];
+                var containerToUpdate = cloudDatabase.GetContainer(container.Id);
 
                 if (container.Throughput.HasValue)
-                    await containerToUpdate.ReplaceProvisionedThroughputAsync(container.Throughput.Value);
+                    await containerToUpdate.ReplaceThroughputAsync(container.Throughput.Value);
 
-                var cosmosContainerSettings = new CosmosContainerSettings(containerToUpdate.Id, container.PartitionKey)
+                var cosmosContainerSettings = new ContainerProperties(containerToUpdate.Id, container.PartitionKey)
                 {
-                    DefaultTimeToLive = TimeSpan.FromSeconds(container.DefaultTimeToLive),
+                    DefaultTimeToLive = Convert.ToInt32(TimeSpan.FromSeconds(container.DefaultTimeToLive).TotalSeconds),
                     UniqueKeyPolicy = container.UniqueKeyPolicy ?? new UniqueKeyPolicy(),
                     IndexingPolicy = container.IndexingPolicy ??
                                      IndexingPolicyExtentions.CreateDefaultIndexingPolicy()
@@ -174,52 +176,52 @@ namespace BigBang.Migrator
 
                 _logger.LogInformation($"Updating container {container.Id}");
 
-                await containerToUpdate.ReplaceAsync(cosmosContainerSettings);
+                await containerToUpdate.ReplaceContainerAsync(cosmosContainerSettings);
 
                 _logger.LogInformation("Checking which stored procedures currently exist");
 
-                var currentStoredProcedures = (await containerToUpdate.StoredProcedures
-                    .GetStoredProcedureIterator()
-                    .FetchNextSetAsync())
+                var currentStoredProcedures = (await containerToUpdate.Scripts
+                    .GetStoredProcedureQueryIterator<dynamic>()
+                    .GetAll())
                     .Select(c => c.Id)
                     .ToList();
 
-                foreach (var file in container.StoredProcedures)
-                {
-                    var id = file.Replace(".js", "");
-                    if (currentStoredProcedures.Contains(id))
-                    {
-                        _logger.LogInformation($"Replacing stored procedure {file}");
+                //foreach (var file in container.StoredProcedures)
+                //{
+                //    var id = file.Replace(".js", "");
+                //    if (currentStoredProcedures.Contains(id))
+                //    {
+                //        _logger.LogInformation($"Replacing stored procedure {file}");
 
-                        var storedProc = containerToUpdate.StoredProcedures[id];
-                        await storedProc.ReplaceAsync(await File.ReadAllTextAsync(Path.Combine(directoryFullPath, file)));
-                    }
-                    else
-                    {
-                        _logger.LogInformation($"Creating stored procedure {file}");
+                //        var storedProc = containerToUpdate.StoredProcedures[id];
+                //        await storedProc.ReplaceAsync(await File.ReadAllTextAsync(Path.Combine(directoryFullPath, file)));
+                //    }
+                //    else
+                //    {
+                //        _logger.LogInformation($"Creating stored procedure {file}");
 
-                        await containerToUpdate.StoredProcedures.CreateStoredProcedureAsync(id,
-                            await File.ReadAllTextAsync(Path.Combine(directoryFullPath, file)));
-                    }
-                }
+                //        await containerToUpdate.StoredProcedures.CreateStoredProcedureAsync(id,
+                //            await File.ReadAllTextAsync(Path.Combine(directoryFullPath, file)));
+                //    }
+                //}
 
-                foreach (var id in currentStoredProcedures.Except(container.StoredProcedures))
-                {
-                    _logger.LogInformation($"Deleting stored procedure {id}");
-                    await containerToUpdate.StoredProcedures[id].DeleteAsync();
-                }
+                //foreach (var id in currentStoredProcedures.Except(container.StoredProcedures))
+                //{
+                //    _logger.LogInformation($"Deleting stored procedure {id}");
+                //    await containerToUpdate.StoredProcedures[id].DeleteAsync();
+                //}
             }
         }
 
-        private async Task DeleteContainers(IEnumerable<Container> containersToDelete, CosmosDatabase cloudDatabase)
+        private async Task DeleteContainers(IEnumerable<ContainerProperties> containersToDelete, Database cloudDatabase)
         {
             foreach (var container in containersToDelete)
             {
-                var containerToDelete = cloudDatabase.Containers[container.Id];
+                var containerToDelete = cloudDatabase.GetContainer(container.Id);
 
                 _logger.LogInformation($"Deleting container {container.Id}");
 
-                await containerToDelete.DeleteAsync();
+                await containerToDelete.DeleteContainerAsync();
             }
         }
     }

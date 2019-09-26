@@ -7,15 +7,18 @@ namespace BigBang.Migrator
 {
     class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             var serviceCollection = new ServiceCollection();
             ConfigureServices(serviceCollection);
 
             var provider = serviceCollection.BuildServiceProvider();
 
-            Parser.Default.ParseArguments<MigrationOptions>(args)
-                .WithParsed(async o =>
+            var parser = new Parser();
+            var parsedArgs = parser.ParseArguments<MigrationOptions>(args);
+
+            await parsedArgs
+                .MapResult(async o =>
                 {
                     var migrator = provider.GetService<Migrator>();
                     var validated = await migrator.ValidateOptions(o);
@@ -23,7 +26,7 @@ namespace BigBang.Migrator
                     {
                         await migrator.RunMigrations();
                     }
-                });
+                }, error => Task.FromResult(0));
         }
 
         private static void ConfigureServices(IServiceCollection services)

@@ -7,11 +7,11 @@ namespace BigBang.Migrator.Models
     public class MigratableDatabase
     {
         public string Id { get; set; }
-        public List<Container> Containers { get; set; }
+        public List<BigBangContainer> Containers { get; set; }
         public int? Throughput { get; set; }
     }
 
-    public class Container
+    public class BigBangContainer
     {
         public string Id { get; set; }
         public IndexingPolicy IndexingPolicy { get; set; }
@@ -32,19 +32,19 @@ namespace BigBang.Migrator.Models
             {
                 Automatic = true,
                 IndexingMode = IndexingMode.Consistent,
-                IncludedPaths = new Collection<IncludedPath>
-                {
-                    new IncludedPath
-                    {
-                        Path = "/*",
-                        Indexes = new Collection<Index>
-                        {
-                            new RangeIndex(DataType.Number, -1),
-                            new RangeIndex(DataType.String, -1),
-                            new SpatialIndex(DataType.Point)
-                        }
-                    }
-                }
+                //IncludedPaths = new Collection<IncludedPath>
+                //{
+                //    new IncludedPath
+                //    {
+                //        Path = "/*",
+                //        Indexes = new Collection<Index>
+                //        {
+                //            new RangeIndex(DataType.Number, -1),
+                //            new RangeIndex(DataType.String, -1),
+                //            new SpatialIndex(DataType.Point)
+                //        }
+                //    }
+                //}
             };
         }
     }
