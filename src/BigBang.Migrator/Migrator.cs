@@ -105,7 +105,7 @@ namespace BigBang.Migrator
                 await client.CreateDatabaseIfNotExistsAsync(requestedDatabase.Id, requestedDatabase.Throughput);
             var cloudDatabase = response.Database;
 
-            if (response.StatusCode == HttpStatusCode.Conflict && requestedDatabase.Throughput.HasValue)
+            if (response.StatusCode != HttpStatusCode.Created && requestedDatabase.Throughput.HasValue)
             {
                 _logger.LogInformation("Database already exists, replacing throughput");
                 await cloudDatabase.ReplaceThroughputAsync(requestedDatabase.Throughput.Value);
