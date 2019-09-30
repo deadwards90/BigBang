@@ -63,7 +63,8 @@
         ]
       },
       "partitionKey": "/partitionKey",
-      "throughput":  "",
+      "throughput": "",
+      "updateThroughput": false, 
       "defaultTimeToLive": 1000,
       "storedProcedures":  [
         "sp_mytest2.js"

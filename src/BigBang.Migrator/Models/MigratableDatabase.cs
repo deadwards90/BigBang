@@ -9,6 +9,7 @@ namespace BigBang.Migrator.Models
         public string Id { get; set; }
         public List<BigBangContainer> Containers { get; set; }
         public int? Throughput { get; set; }
+        public bool UpdateThroughput { get; set; }
     }
 
     public class BigBangContainer

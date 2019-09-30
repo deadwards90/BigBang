@@ -6,6 +6,7 @@ using System.Net;
 using System.Threading.Tasks;
 using BigBang.Migrator.Models;
 using Microsoft.Azure.Cosmos;
+using Microsoft.Azure.Cosmos.Scripts;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 
@@ -69,7 +70,7 @@ namespace BigBang.Migrator
 
             _logger.LogInformation($"Updating {containersToUpdate.Count} containers");
 
-            await UpdateContainers(containersToUpdate, cloudDatabase, directoryFullPath);
+            await UpdateContainers(containersToUpdate, cloudDatabase, requestedDatabase.UpdateThroughput, directoryFullPath);
 
             _logger.LogInformation($"Deleting {containersToDelete.Count} containers");
 
@@ -92,8 +93,8 @@ namespace BigBang.Migrator
                 .ToList();
 
             var containersToDelete = cloudContainers
-                .Where(c => !containersToCreate.Any(cc => cc.Id == c.Id))
-                .Where(c => !containersToUpdate.Any(cc => cc.Id == c.Id))
+                .Where(c => containersToCreate.All(cc => cc.Id != c.Id))
+                .Where(c => containersToUpdate.All(cc => cc.Id != c.Id))
                 .ToList();
 
             return (containersToCreate, containersToUpdate, containersToDelete);
@@ -141,29 +142,27 @@ namespace BigBang.Migrator
                 foreach (var file in container.StoredProcedures)
                 {
                     _logger.LogInformation($"Creating stored procedure {file}");
-
-                    var id = Path.GetFileNameWithoutExtension(Path.Combine(directoryFullPath, file));
-                    //await cloudContainer.Scripts.CreateStoredProcedureAsync(id,
-                    //    await File.ReadAllTextAsync(Path.Combine(directoryFullPath, file)));
+                    await cloudContainer.Scripts.CreateStoredProcedureAsync(await GetStoredProcedurePropertiesFromPath(directoryFullPath, file));
                 }
 
-
-                // TODO: Implement UDFs when available
-                //foreach (var file in container.UserDefinedFunctions)
-                //{
-                //    var id = Path.GetFileNameWithoutExtension(file);
-                //}
+                foreach (var file in container.UserDefinedFunctions)
+                {
+                    _logger.LogInformation($"Creating user defined function {file}");
+                    await cloudContainer.Scripts.CreateUserDefinedFunctionAsync(await GetUserDefinedFunctionPropertiesFromPath(directoryFullPath, file));
+                }
             }
         }
 
-        private async Task UpdateContainers(IEnumerable<BigBangContainer> containersToUpdate, Database cloudDatabase,
+        private async Task UpdateContainers(IEnumerable<BigBangContainer> containersToUpdate, 
+            Database cloudDatabase,
+            bool updateThroughput,
             string directoryFullPath)
         {
             foreach (var container in containersToUpdate)
             {
                 var containerToUpdate = cloudDatabase.GetContainer(container.Id);
 
-                if (container.Throughput.HasValue)
+                if (updateThroughput && container.Throughput.HasValue)
                     await containerToUpdate.ReplaceThroughputAsync(container.Throughput.Value);
 
                 var cosmosContainerSettings = new ContainerProperties(containerToUpdate.Id, container.PartitionKey)
@@ -186,30 +185,53 @@ namespace BigBang.Migrator
                     .Select(c => c.Id)
                     .ToList();
 
-                //foreach (var file in container.StoredProcedures)
-                //{
-                //    var id = file.Replace(".js", "");
-                //    if (currentStoredProcedures.Contains(id))
-                //    {
-                //        _logger.LogInformation($"Replacing stored procedure {file}");
+                foreach (var file in container.StoredProcedures)
+                {
+                    var id = file.Replace(".js", "");
+                    if (currentStoredProcedures.Contains(id))
+                    {
+                        _logger.LogInformation($"Replacing stored procedure {file}");
+                        await containerToUpdate.Scripts.ReplaceStoredProcedureAsync(await GetStoredProcedurePropertiesFromPath(directoryFullPath, file));
+                    }
+                    else
+                    {
+                        _logger.LogInformation($"Creating stored procedure {file}");
+                        await containerToUpdate.Scripts.CreateStoredProcedureAsync(await GetStoredProcedurePropertiesFromPath(directoryFullPath, file));
+                    }
+                }
 
-                //        var storedProc = containerToUpdate.StoredProcedures[id];
-                //        await storedProc.ReplaceAsync(await File.ReadAllTextAsync(Path.Combine(directoryFullPath, file)));
-                //    }
-                //    else
-                //    {
-                //        _logger.LogInformation($"Creating stored procedure {file}");
+                foreach (var id in currentStoredProcedures.Except(container.StoredProcedures))
+                {
+                    _logger.LogInformation($"Deleting stored procedure {id}");
+                    await containerToUpdate.Scripts.DeleteStoredProcedureAsync(id);
+                }
 
-                //        await containerToUpdate.StoredProcedures.CreateStoredProcedureAsync(id,
-                //            await File.ReadAllTextAsync(Path.Combine(directoryFullPath, file)));
-                //    }
-                //}
+                var currentUserDefinedFuncs = (await containerToUpdate.Scripts
+                        .GetUserDefinedFunctionQueryIterator<dynamic>()
+                        .GetAll())
+                        .Select(c => c.Id)
+                        .ToList();
 
-                //foreach (var id in currentStoredProcedures.Except(container.StoredProcedures))
-                //{
-                //    _logger.LogInformation($"Deleting stored procedure {id}");
-                //    await containerToUpdate.StoredProcedures[id].DeleteAsync();
-                //}
+                foreach (var file in container.UserDefinedFunctions)
+                {
+                    var id = file.Replace(".js", "");
+                    if (currentUserDefinedFuncs.Contains(id))
+                    {
+                        _logger.LogInformation($"Replacing user defined function {file}");
+                        await containerToUpdate.Scripts.ReplaceUserDefinedFunctionAsync(await GetUserDefinedFunctionPropertiesFromPath(directoryFullPath, file));
+                    }
+                    else
+                    {
+                        _logger.LogInformation($"Creating user defined function  {file}");
+                        await containerToUpdate.Scripts.CreateUserDefinedFunctionAsync(await GetUserDefinedFunctionPropertiesFromPath(directoryFullPath, file));
+                    }
+                }
+
+                foreach (var id in currentUserDefinedFuncs.Except(container.UserDefinedFunctions))
+                {
+                    _logger.LogInformation($"Deleting user defined function {id}");
+                    await containerToUpdate.Scripts.DeleteUserDefinedFunctionAsync(id);
+                }
             }
         }
 
@@ -224,5 +246,28 @@ namespace BigBang.Migrator
                 await containerToDelete.DeleteContainerAsync();
             }
         }
+
+        private async Task<StoredProcedureProperties> GetStoredProcedurePropertiesFromPath(string directoryFullPath, string filePath)
+        {
+            var id = Path.GetFileNameWithoutExtension(Path.Combine(directoryFullPath, filePath));
+
+            return new StoredProcedureProperties
+            {
+                Id = id,
+                Body = await File.ReadAllTextAsync(Path.Combine(directoryFullPath, filePath))
+            };
+        }
+
+        private async Task<UserDefinedFunctionProperties> GetUserDefinedFunctionPropertiesFromPath(string directoryFullPath, string filePath)
+        {
+            var id = Path.GetFileNameWithoutExtension(Path.Combine(directoryFullPath, filePath));
+
+            return new UserDefinedFunctionProperties
+            {
+                Id = id,
+                Body = await File.ReadAllTextAsync(Path.Combine(directoryFullPath, filePath))
+            };
+        }
+
     }
 }
