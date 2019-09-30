@@ -8,49 +8,7 @@
         "automatic": true,
         "includedPaths": [
           {
-            "path": "/*",
-            "indexes": [
-              {
-                "kind": "Range",
-                "dataType": "Number",
-                "precision": -1
-              },
-              {
-                "kind": "Hash",
-                "dataType": "String",
-                "precision": 3
-              }
-            ]
-          },
-          {
-            "path": "/Status/DeliveryEvents/[]/Event/?",
-            "indexes": [
-              {
-                "kind": "Hash",
-                "dataType": "String",
-                "precision": 3
-              },
-              {
-                "kind": "Range",
-                "dataType": "Number",
-                "precision": -1
-              }
-            ]
-          },
-          {
-            "path": "/Status/EngagementEvents/[]/EventType/?",
-            "indexes": [
-              {
-                "kind": "Hash",
-                "dataType": "String",
-                "precision": 3
-              },
-              {
-                "kind": "Range",
-                "dataType": "Number",
-                "precision": -1
-              }
-            ]
+            "path": "/*"
           }
         ],
         "excludedPaths": [

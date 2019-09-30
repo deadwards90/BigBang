@@ -33,19 +33,13 @@ namespace BigBang.Migrator.Models
             {
                 Automatic = true,
                 IndexingMode = IndexingMode.Consistent,
-                //IncludedPaths = new Collection<IncludedPath>
-                //{
-                //    new IncludedPath
-                //    {
-                //        Path = "/*",
-                //        Indexes = new Collection<Index>
-                //        {
-                //            new RangeIndex(DataType.Number, -1),
-                //            new RangeIndex(DataType.String, -1),
-                //            new SpatialIndex(DataType.Point)
-                //        }
-                //    }
-                //}
+                IncludedPaths =
+                {
+                    new IncludedPath
+                    {
+                        Path = "/*"
+                    }
+                }
             };
         }
     }
